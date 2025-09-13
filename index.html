@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Futuristic Cloth Shop</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts - Inter & Raleway for styles -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Raleway:wght@700&display=swap" rel="stylesheet">
+    <!-- Three.js CDN for 3D model viewer -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7fafc;
+        }
+        .loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #1F2937; /* Dark background */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            transition: opacity 0.8s ease-in-out;
+            opacity: 1;
+        }
+        .loading-screen.hidden {
+            opacity: 0;
+            visibility: hidden;
+        }
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid #fff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .cart-modal, .notification-modal {
+            transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            transform: translateX(100%);
+        }
+        .cart-modal.open, .notification-modal.open {
+            transform: translateX(0);
+        }
+        .left-nav {
+            transform: translateX(-100%);
+            transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+        .left-nav.open {
+            transform: translateX(0);
+        }
+        .modal-overlay {
+            display: none;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(5px);
+        }
+        .modal-overlay.open {
+            display: block;
+        }
+        [contenteditable]:focus {
+            outline: 2px solid #3B82F6;
+            outline-offset: 2px;
+        }
+        .bubble-effect {
+            position: fixed;
+            background-color: #3B82F6;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            z-index: 1000;
+            animation: bubbleAnimation 0.8s ease-out forwards;
+        }
+        @keyframes bubbleAnimation {
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+            100% {
+                transform: scale(0.5) translate(var(--dx), var(--dy));
+                opacity: 0;
+            }
+        }
+        .cart-jiggle {
+            animation: jiggle 0.5s ease-in-out 1;
+        }
+        @keyframes jiggle {
+            0%, 100% { transform: rotate(0deg); }
+            25% { transform: rotate(5deg); }
+            75% { transform: rotate(-5deg); }
+        }
+        .bell-shake {
+            animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+            transform: translate3d(0, 0, 0);
+            backface-visibility: hidden;
+            perspective: 1000px;
+        }
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-1px, 0, 0); }
+            20%, 80% { transform: translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+            40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+        .header-icons {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            margin-left: auto;
+            gap: 1.5rem; /* Equivalent to space-x-6 */
+        }
+        #threejs-canvas {
+            display: none;
+        }
+        #threejs-canvas.open {
+            display: block;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <!-- Loading Screen (Intro) -->
+    <div id="loading-screen" class="loading-screen">
+        <div class="spinner mb-4"></div>
+        <p class="text-white text-xl font-semibold">Loading your shop...</p>
+        <p id="loading-message" class="text-gray-300 text-sm mt-2">Connecting to the future of shopping...</p>
+    </div>
+    
+    <!-- Custom Modal/Dialog Box for alerts -->
+    <div id="dialog-overlay" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 z-[100] flex items-center justify-center">
+        <div class="bg-white p-6 rounded-lg shadow-2xl w-11/12 md:w-1/3 text-center">
+            <h3 id="dialog-title" class="text-xl font-bold mb-2"></h3>
+            <p id="dialog-message" class="text-gray-700 mb-4"></p>
+            <button id="dialog-close-btn" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 transition">OK</button>
+        </div>
+    </div>
+
+    <!-- Modal for changing shop name -->
+    <div id="name-modal-overlay" class="fixed inset-0 bg-gray-900 bg-opacity-75 z-40 hidden flex items-center justify-center modal-overlay">
+        <div class="bg-white p-8 rounded-xl shadow-2xl w-11/12 md:w-1/3">
+            <h3 class="text-2xl font-bold mb-4 text-center">Change Shop Name</h3>
+            <input type="text" id="shop-name-input" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus-within:ring-blue-500 mb-4" placeholder="Enter new shop name">
+            <div class="flex justify-end space-x-2">
+                <button id="save-name-btn" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 transition duration-300">Save</button>
+                <button id="cancel-name-btn" class="bg-gray-300 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-400 transition duration-300">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Left Side Nav/About Section -->
+    <div id="left-nav" class="left-nav fixed top-0 left-0 h-full w-72 md:w-80 bg-white shadow-2xl z-50 p-6 flex flex-col">
+        <div class="flex justify-between items-center pb-4 border-b border-gray-200">
+            <div class="flex items-center space-x-2">
+                <!-- Editable Logo Text or Image Placeholder -->
+                <div id="logo-container" contenteditable="false" class="cursor-pointer">
+                    <p id="logo-text" class="text-2xl font-bold text-gray-900" style="font-family: 'Raleway', sans-serif;">Brand Logo</p>
+                </div>
+            </div>
+            <button id="close-nav-btn" class="text-gray-500 hover:text-gray-900 transition duration-300">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+        
+        <div class="flex-grow overflow-y-auto mt-6 space-y-8">
+            <!-- About Section 1: Our Story -->
+            <div class="bg-gray-50 p-4 rounded-lg shadow-sm">
+                <h3 class="text-xl font-semibold mb-2">Hamari Kahani</h3>
+                <p id="about-story" contenteditable="false" class="text-gray-600 leading-relaxed">
+                    Hamari shuruaat ek chote se sapne se hui thi, jismein hum fashion ko sabhi ke liye affordable aur accessible banana chahte the. Aaj, hum quality aur style ke liye jaane jaate hain.
+                </p>
+            </div>
+            <!-- About Section 2: Our Mission -->
+            <div class="bg-gray-50 p-4 rounded-lg shadow-sm">
+                <h3 class="text-xl font-semibold mb-2">Hamara Lakshya</h3>
+                <p id="about-mission" contenteditable="false" class="text-gray-600 leading-relaxed">
+                    Hamara mission hai apne customers ko aisi clothing provide karna jo na sirf unki personality ko enhance kare, balki unhe comfort aur confidence bhi de.
+                </p>
+            </div>
+            <!-- About Section 3: Contact Us -->
+            <div class="bg-gray-50 p-4 rounded-lg shadow-sm">
+                <h3 class="text-xl font-semibold mb-2">Sampark Karein</h3>
+                <p id="about-contact" contenteditable="false" class="text-gray-600 leading-relaxed">
+                    Kisi bhi sawaal ya feedback ke liye, aap hamare store par ya hamari website par sampark kar sakte hain. Hum aapki madad karne ke liye hamesha taiyaar hain.
+                </p>
+            </div>
+        </div>
+
+        <!-- Role Selector Section -->
+        <div class="mt-8 pt-4 border-t border-gray-200">
+            <h4 class="text-lg font-bold mb-2">Role Select Karein</h4>
+            <div class="relative">
+                <select id="user-role" class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus-within:ring-blue-500">
+                    <option value="member">Member (No Editing)</option>
+                    <option value="editor">Editor (Edit About)</option>
+                    <option value="co-admin">Co-Admin (Edit About & Shop Name)</option>
+                    <option value="admin">Admin (Full Control)</option>
+                </select>
+            </div>
+            <p id="role-status" class="mt-2 text-sm text-center text-gray-500"></p>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <header class="bg-white shadow-sm sticky top-0 z-30">
+        <nav class="container mx-auto px-6 py-4 flex items-center justify-between">
+            <div class="flex items-center">
+                <h1 id="shop-name" class="text-3xl font-bold text-gray-900 cursor-pointer transition-colors duration-300 hover:text-blue-600">My Cloth Shop</h1>
+            </div>
+            <div class="header-icons">
+                 <!-- 3D View Button -->
+                <button id="three-d-button" class="relative group">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-600 group-hover:text-blue-600 transition duration-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 21.5l-9.5-5.5v-11L12 4.5l9.5 5.5v11z"></path>
+                        <path d="M12 21.5V11l9.5-5.5"></path>
+                        <path d="M12 11L2.5 5.5"></path>
+                        <path d="M2.5 16l9.5 5.5"></path>
+                        <path d="M21.5 16l-9.5 5.5"></path>
+                    </svg>
+                </button>
+                <!-- Bell Icon with Notification Effect -->
+                <button id="bell-button" class="relative group">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-600 group-hover:text-blue-600 transition duration-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                        <path d="M13.73 21a2 2 0 01-3.46 0"></path>
+                    </svg>
+                    <span id="bell-count" class="absolute -top-2 -right-2 bg-red-600 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center transform group-hover:scale-110 transition-transform hidden">0</span>
+                </button>
+                <!-- Cart Button with Jiggle Effect -->
+                <button id="cart-button" class="relative group">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-600 group-hover:text-blue-600 transition duration-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="9" cy="21" r="1"></circle>
+                        <circle cx="20" cy="21" r="1"></circle>
+                        <path d="M1 1h4l2.68 13.39a2 2 0 0 0 1.95 1.61h10.74a2 2 0 0 0 1.95-1.61L23 6H6"></path>
+                    </svg>
+                    <span id="cart-count" class="absolute -top-2 -right-2 bg-blue-600 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center transform group-hover:scale-110 transition-transform">0</span>
+                </button>
+            </div>
+        </nav>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container mx-auto px-6 py-8">
+        <!-- Admin/Co-Admin Notification Panel -->
+        <section id="admin-notification-panel" class="hidden mb-8 p-6 bg-white rounded-xl shadow-lg border-l-4 border-blue-500">
+            <h2 class="text-2xl font-bold mb-4 text-blue-800">Admin Notification Panel</h2>
+            <p class="text-gray-600 mb-4">Send a message to all users.</p>
+            <div class="flex flex-col md:flex-row items-stretch md:space-x-4 space-y-4 md:space-y-0">
+                <input type="text" id="notification-input" class="flex-grow p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Type your notification message...">
+                <button id="send-notification-btn" class="bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg hover:bg-blue-700 transition duration-300 transform hover:scale-105">
+                    Send Notification
+                </button>
+            </div>
+        </section>
+
+        <section id="products" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+            <!-- Product cards will be inserted here by JavaScript -->
+        </section>
+        <!-- 3D Canvas -->
+        <div id="threejs-canvas" class="mt-8 rounded-xl shadow-lg w-full h-96 bg-gray-200 hidden"></div>
+    </main>
+
+    <!-- Cart Modal -->
+    <div id="cart-modal" class="cart-modal fixed top-0 right-0 h-full w-full md:w-1/3 bg-white shadow-2xl z-50 p-6 flex flex-col">
+        <div class="flex justify-between items-center pb-4 border-b border-gray-200">
+            <h2 class="text-2xl font-bold">Shopping Cart</h2>
+            <button id="close-cart-button" class="text-gray-500 hover:text-gray-900 transition duration-300">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+
+        <div id="cart-items" class="flex-grow overflow-y-auto my-4 space-y-4">
+            <!-- Cart items will be rendered here by JavaScript -->
+        </div>
+
+        <div class="pt-4 border-t border-gray-200">
+            <div class="flex justify-between items-center mb-4 text-xl font-bold">
+                <span>Total:</span>
+                <span id="cart-total">$0.00</span>
+            </div>
+            
+            <!-- Payment Section -->
+            <div class="my-6">
+                <h3 class="text-lg font-bold mb-2">Bhugtaan ka Tarika Chunein</h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <button class="flex items-center justify-center p-3 bg-blue-100 text-blue-800 rounded-lg font-semibold hover:bg-blue-200 transition">Online Pay</button>
+                    <button class="flex items-center justify-center p-3 bg-blue-100 text-blue-800 rounded-lg font-semibold hover:bg-blue-200 transition">Card</button>
+                    <button class="flex items-center justify-center p-3 bg-green-100 text-green-800 rounded-lg font-semibold hover:bg-green-200 transition">Cash on Delivery</button>
+                </div>
+            </div>
+
+            <button class="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition duration-300 shadow-lg transform hover:scale-105">
+                Checkout
+            </button>
+            <button id="clear-cart-btn" class="w-full mt-2 bg-red-500 text-white font-bold py-3 px-6 rounded-lg hover:bg-red-600 transition duration-300 shadow-md">
+                Clear Cart
+            </button>
+        </div>
+    </div>
+
+    <!-- Notification Modal (NEW) -->
+    <div id="notification-modal" class="notification-modal fixed top-0 right-0 h-full w-full md:w-1/3 bg-white shadow-2xl z-50 p-6 flex flex-col">
+        <div class="flex justify-between items-center pb-4 border-b border-gray-200">
+            <h2 class="text-2xl font-bold">Notifications</h2>
+            <button id="close-notification-button" class="text-gray-500 hover:text-gray-900 transition duration-300">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+        <div id="notification-list" class="flex-grow overflow-y-auto my-4 space-y-4">
+            <!-- Notifications will be rendered here by JavaScript -->
+        </div>
+        <div class="pt-4 border-t border-gray-200">
+            <button id="clear-notifications-btn" class="w-full bg-gray-200 text-gray-800 font-bold py-3 px-6 rounded-lg hover:bg-gray-300 transition duration-300 shadow-md">
+                Clear All Notifications
+            </button>
+        </div>
+    </div>
+
+    <!-- Overlay for the cart & notification modals -->
+    <div id="cart-overlay" class="modal-overlay fixed inset-0 z-40"></div>
+
+    <!-- Header Toggle Button for Left Nav -->
+    <button id="open-nav-btn" class="fixed top-4 left-4 p-3 bg-white rounded-full shadow-lg z-40 md:hidden">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-800" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+    </button>
+    <div id="nav-overlay" class="modal-overlay fixed inset-0 z-30"></div>
+
+    <!-- Footer (Outro) -->
+    <footer class="bg-gray-800 text-white py-8 mt-12">
+        <div class="container mx-auto px-6 text-center">
+            <p class="text-sm opacity-75">&copy; 2024 My Cloth Shop. All rights reserved.</p>
+            <p class="mt-4 text-2xl font-bold italic text-blue-300" style="font-family: 'Raleway', sans-serif;">Aapka Aabhar!</p>
+        </div>
+    </footer>
+
+    <script type="module">
+        // Global state variables
+        let products = [
+            { id: 'prod1', name: 'Digital Rain Jacket', description: 'Ek stylish rain jacket jo barish mein bhi aapko tech-savvy look de.', price: 59.99, image: 'https://placehold.co/400x400/1e293b/d1d5db?text=Digital+Jacket' },
+            { id: 'prod2', name: 'Cyberpunk Sneaker', description: 'High-tech sneakers jo future ke fashion ko darshate hain.', price: 89.99, image: 'https://placehold.co/400x400/334155/e5e7eb?text=Cyberpunk+Sneaker' },
+            { id: 'prod3', name: 'Neon T-Shirt', description: 'Ek chamakdaar t-shirt jo aapko raat mein bhi alag dikhaegi.', price: 29.99, image: 'https://placehold.co/400x400/64748b/f1f5f9?text=Neon+T-Shirt' },
+            { id: 'prod4', name: 'Smart Goggles', description: 'Wearable tech goggles jo aapki aankhon ko digital duniya se jode rakhti hain.', price: 129.99, image: 'https://placehold.co/400x400/94a3b8/f8fafc?text=Smart+Goggles' },
+            { id: 'prod5', name: 'Quantum Hoodie', description: 'Ek hoodie jo aapke sharir ke temperature ko control kar sakti hai.', price: 79.99, image: 'https://placehold.co/400x400/4a5568/a0aec0?text=Quantum+Hoodie' },
+            { id: 'prod6', name: 'Holographic Cap', description: 'Ek cap jismein holographic patterns dikhai dete hain.', price: 39.99, image: 'https://placehold.co/400x400/1F2937/F3F4F6?text=Holographic+Cap' }
+        ];
+
+        // UI Element references
+        const productsContainer = document.getElementById('products');
+        const cartItemsContainer = document.getElementById('cart-items');
+        const cartTotalElement = document.getElementById('cart-total');
+        const cartCountElement = document.getElementById('cart-count');
+        const cartModal = document.getElementById('cart-modal');
+        const cartButton = document.getElementById('cart-button');
+        const closeCartButton = document.getElementById('close-cart-button');
+        const cartOverlay = document.getElementById('cart-overlay');
+        const shopNameElement = document.getElementById('shop-name');
+        const nameModalOverlay = document.getElementById('name-modal-overlay');
+        const shopNameInput = document.getElementById('shop-name-input');
+        const saveNameBtn = document.getElementById('save-name-btn');
+        const cancelNameBtn = document.getElementById('cancel-name-btn');
+        const clearCartBtn = document.getElementById('clear-cart-btn');
+        const loadingScreen = document.getElementById('loading-screen');
+        const dialogOverlay = document.getElementById('dialog-overlay');
+        const dialogTitle = document.getElementById('dialog-title');
+        const dialogMessage = document.getElementById('dialog-message');
+        const dialogCloseBtn = document.getElementById('dialog-close-btn');
+        const leftNav = document.getElementById('left-nav');
+        const openNavBtn = document.getElementById('open-nav-btn');
+        const closeNavBtn = document.getElementById('close-nav-btn');
+        const navOverlay = document.getElementById('nav-overlay');
+        const aboutStory = document.getElementById('about-story');
+        const aboutMission = document.getElementById('about-mission');
+        const aboutContact = document.getElementById('about-contact');
+        const userRoleSelector = document.getElementById('user-role');
+        const roleStatus = document.getElementById('role-status');
+        const logoTextElement = document.getElementById('logo-text');
+        const logoContainer = document.getElementById('logo-container');
+        const bellButton = document.getElementById('bell-button');
+        const bellCount = document.getElementById('bell-count');
+        const threeDButton = document.getElementById('three-d-button');
+        const threejsCanvas = document.getElementById('threejs-canvas');
+        const notificationModal = document.getElementById('notification-modal');
+        const notificationList = document.getElementById('notification-list');
+        const closeNotificationBtn = document.getElementById('close-notification-button');
+        const clearNotificationsBtn = document.getElementById('clear-notifications-btn');
+        const adminNotificationPanel = document.getElementById('admin-notification-panel');
+        const notificationInput = document.getElementById('notification-input');
+        const sendNotificationBtn = document.getElementById('send-notification-btn');
+
+        // Local Storage Keys
+        const SHOP_DATA_KEY = 'shop_data';
+        const CART_DATA_KEY = 'cart_data';
+        const NOTIFICATIONS_KEY = 'notifications';
+
+        // --- Helper functions to interact with Local Storage ---
+
+        function loadFromLocalStorage(key, defaultValue) {
+            try {
+                const data = localStorage.getItem(key);
+                return data ? JSON.parse(data) : defaultValue;
+            } catch (error) {
+                console.error(`Error loading from local storage for key: ${key}`, error);
+                return defaultValue;
+            }
+        }
+
+        function saveToLocalStorage(key, data) {
+            try {
+                localStorage.setItem(key, JSON.stringify(data));
+            } catch (error) {
+                console.error(`Error saving to local storage for key: ${key}`, error);
+            }
+        }
+
+        // Main app initialization function
+        function initializeApp() {
+            // Load initial data from local storage
+            const savedShopData = loadFromLocalStorage(SHOP_DATA_KEY, {
+                shopName: 'My Cloth Shop',
+                logoText: 'Brand Logo',
+                about: {
+                    story: 'Hamari shuruaat ek chote se sapne se hui thi, jismein hum fashion ko sabhi ke liye affordable aur accessible banana chahte the. Aaj, hum quality aur style ke liye jaane jaate hain.',
+                    mission: 'Hamara mission hai apne customers ko aisi clothing provide karna jo na sirf unki personality ko enhance kare, balki unhe comfort aur confidence bhi de.',
+                    contact: 'Kisi bhi sawaal ya feedback ke liye, aap hamare store par ya hamari website par sampark kar sakte hain. Hum aapki madad karne ke liye hamesha taiyaar hain.'
+                }
+            });
+            
+            const savedCart = loadFromLocalStorage(CART_DATA_KEY, []);
+            const savedNotifications = loadFromLocalStorage(NOTIFICATIONS_KEY, []);
+
+            // Apply loaded data to the UI
+            shopNameElement.textContent = savedShopData.shopName;
+            logoTextElement.textContent = savedShopData.logoText;
+            aboutStory.textContent = savedShopData.about.story;
+            aboutMission.textContent = savedShopData.about.mission;
+            aboutContact.textContent = savedShopData.about.contact;
+
+            renderCart(savedCart);
+            renderNotifications(savedNotifications);
+            
+            // Hide the loading screen only after all data has been loaded and rendered
+            loadingScreen.classList.add('hidden');
+            renderProducts();
+            updateEditingPermissions(userRoleSelector.value);
+
+            // Set up event listeners for local storage saves
+            setupAboutListeners();
+        }
+
+        function showDialog(title, message) {
+            dialogTitle.textContent = title;
+            dialogMessage.textContent = message;
+            dialogOverlay.classList.remove('hidden');
+        }
+
+        dialogCloseBtn.addEventListener('click', () => {
+            dialogOverlay.classList.add('hidden');
+        });
+        
+        function triggerBellAnimation() {
+            bellButton.classList.add('bell-shake');
+            bellButton.addEventListener('animationend', () => {
+                bellButton.classList.remove('bell-shake');
+            }, { once: true });
+        }
+
+        function updateBell(notifications) {
+            const userRole = userRoleSelector.value;
+            let visibleNotifications;
+            if (userRole === 'admin' || userRole === 'co-admin') {
+                visibleNotifications = notifications;
+            } else {
+                visibleNotifications = notifications.filter(note => note.sender === 'admin');
+            }
+
+            bellCount.textContent = visibleNotifications.length;
+            if (visibleNotifications.length > 0) {
+                bellCount.classList.remove('hidden');
+            } else {
+                bellCount.classList.add('hidden');
+            }
+        }
+        
+        function renderNotifications(notifications) {
+            const userRole = userRoleSelector.value;
+            notificationList.innerHTML = '';
+            
+            let notificationsToShow;
+            if (userRole === 'admin' || userRole === 'co-admin') {
+                notificationsToShow = notifications;
+            } else {
+                notificationsToShow = notifications.filter(note => note.sender === 'admin');
+            }
+
+            if (notificationsToShow.length === 0) {
+                notificationList.innerHTML = '<p class="text-center text-gray-500">Aapke liye koi notifications nahi hain.</p>';
+            } else {
+                notificationsToShow.forEach(note => {
+                    const noteElement = document.createElement('div');
+                    noteElement.className = 'bg-gray-100 p-4 rounded-lg shadow-sm';
+                    noteElement.innerHTML = `
+                        <p class="font-semibold text-gray-800">${note.text}</p>
+                        <p class="text-xs text-gray-400 mt-1">Sent by: ${note.sender} at ${new Date(note.timestamp).toLocaleString()}</p>
+                    `;
+                    notificationList.appendChild(noteElement);
+                });
+            }
+            updateBell(notifications);
+        }
+
+        bellButton.addEventListener('click', () => {
+            triggerBellAnimation();
+            notificationModal.classList.add('open');
+            cartOverlay.classList.add('open');
+        });
+
+        closeNotificationBtn.addEventListener('click', () => {
+            notificationModal.classList.remove('open');
+            cartOverlay.classList.remove('open');
+        });
+
+        clearNotificationsBtn.addEventListener('click', () => {
+            if (userRoleSelector.value === 'admin') {
+                saveToLocalStorage(NOTIFICATIONS_KEY, []);
+                renderNotifications([]);
+                showDialog("Notifications Cleared", "All notifications have been removed.");
+            } else {
+                showDialog("Permission Denied", "Only an Admin can clear notifications.");
+            }
+        });
+        
+        sendNotificationBtn.addEventListener('click', () => {
+            const message = notificationInput.value.trim();
+            const senderRole = userRoleSelector.value;
+            if (message) {
+                const notifications = loadFromLocalStorage(NOTIFICATIONS_KEY, []);
+                notifications.push({
+                    text: message,
+                    sender: senderRole,
+                    timestamp: new Date().getTime()
+                });
+                saveToLocalStorage(NOTIFICATIONS_KEY, notifications);
+                renderNotifications(notifications);
+                showDialog("Notification Sent", "Your notification has been sent successfully.");
+                notificationInput.value = '';
+            } else {
+                showDialog("Error", "Please enter a message to send.");
+            }
+        });
+
+        function updateEditingPermissions(role) {
+            let canEditShopName = false;
+            let canEditAbout = false;
+            let canEditLogo = false;
+            let canSendNotifications = false;
+
+            switch (role) {
+                case 'admin':
+                    canEditShopName = true;
+                    canEditAbout = true;
+                    canEditLogo = true;
+                    canSendNotifications = true;
+                    roleStatus.textContent = "Admin: Full editing control";
+                    break;
+                case 'co-admin':
+                    canEditShopName = true;
+                    canEditAbout = true;
+                    canSendNotifications = true;
+                    roleStatus.textContent = "Co-Admin: Edit About sections and shop name";
+                    break;
+                case 'editor':
+                    canEditAbout = true;
+                    roleStatus.textContent = "Editor: Edit About sections only";
+                    break;
+                case 'member':
+                default:
+                    roleStatus.textContent = "Member: No editing permissions";
+                    break;
+            }
+            shopNameElement.setAttribute('contenteditable', canEditShopName);
+            aboutStory.setAttribute('contenteditable', canEditAbout);
+            aboutMission.setAttribute('contenteditable', canEditAbout);
+            aboutContact.setAttribute('contenteditable', canEditAbout);
+            logoContainer.setAttribute('contenteditable', canEditLogo);
+            
+            if (canSendNotifications) {
+                adminNotificationPanel.classList.remove('hidden');
+            } else {
+                adminNotificationPanel.classList.add('hidden');
+            }
+
+            if (canEditShopName) {
+                shopNameElement.addEventListener('click', openNameModal);
+            } else {
+                shopNameElement.removeEventListener('click', openNameModal);
+            }
+        }
+
+        function renderProducts() {
+            productsContainer.innerHTML = '';
+            products.forEach(product => {
+                const productCard = document.createElement('div');
+                productCard.className = 'bg-white rounded-xl shadow-lg overflow-hidden flex flex-col justify-between transform transition duration-500 hover:scale-[1.02] hover:shadow-2xl';
+                productCard.dataset.productId = product.id;
+                productCard.innerHTML = `
+                    <img src="${product.image}" alt="${product.name}" class="w-full h-64 object-cover">
+                    <div class="p-6 flex flex-col flex-grow">
+                        <h3 class="text-xl font-semibold mb-2">${product.name}</h3>
+                        <p class="text-gray-500 text-sm flex-grow mb-4">${product.description}</p>
+                        <div class="flex items-center justify-between mt-auto">
+                            <span class="text-lg font-bold text-gray-900">$${product.price.toFixed(2)}</span>
+                            <div class="flex items-center space-x-2">
+                                <button onclick="addToCart('${product.id}')" class="add-to-cart-btn bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 transition duration-300 transform hover:scale-105">
+                                    Add to Cart
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                productsContainer.appendChild(productCard);
+            });
+        }
+
+        function renderCart(cartItems) {
+            cartItemsContainer.innerHTML = '';
+            let total = 0;
+            if (!cartItems || cartItems.length === 0) {
+                 cartItemsContainer.innerHTML = '<p class="text-center text-gray-500">Your cart is empty.</p>';
+                 cartTotalElement.textContent = `$0.00`;
+                 cartCountElement.textContent = 0;
+                 return;
+            }
+            cartItems.forEach(item => {
+                total += item.price * item.quantity;
+                const cartItem = document.createElement('div');
+                cartItem.className = 'flex items-center space-x-4 bg-gray-50 p-4 rounded-lg shadow-sm';
+                cartItem.innerHTML = `
+                    <img src="${item.image}" alt="${item.name}" class="w-16 h-16 object-cover rounded-lg">
+                    <div class="flex-grow">
+                        <h4 class="font-semibold text-lg">${item.name}</h4>
+                        <p class="text-sm text-gray-500">Price: $${item.price.toFixed(2)}</p>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <button onclick="changeQuantity('${item.id}', -1)" class="bg-gray-200 text-gray-600 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-300 transition duration-200">-</button>
+                        <span class="font-bold w-6 text-center">${item.quantity}</span>
+                        <button onclick="changeQuantity('${item.id}', 1)" class="bg-gray-200 text-gray-600 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-300 transition duration-200">+</button>
+                    </div>
+                    <button onclick="removeFromCart('${item.id}')" class="text-red-500 hover:text-red-700 transition duration-300">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                    </button>
+                `;
+                cartItemsContainer.appendChild(cartItem);
+            });
+
+            cartTotalElement.textContent = `$${total.toFixed(2)}`;
+            cartCountElement.textContent = cartItems.reduce((sum, item) => sum + item.quantity, 0);
+        }
+
+        window.addToCart = function(productId) {
+            const product = products.find(p => p.id === productId);
+            let currentCart = loadFromLocalStorage(CART_DATA_KEY, []);
+            const existingItem = currentCart.find(item => item.id === productId);
+
+            if (existingItem) {
+                existingItem.quantity += 1;
+            } else {
+                currentCart.push({ ...product, quantity: 1 });
+            }
+
+            saveToLocalStorage(CART_DATA_KEY, currentCart);
+            renderCart(currentCart);
+            
+            const productCard = document.querySelector(`[data-product-id="${productId}"]`);
+            const cartButtonRect = cartButton.getBoundingClientRect();
+            
+            const bubble = document.createElement('div');
+            bubble.className = 'bubble-effect';
+            document.body.appendChild(bubble);
+
+            const cardRect = productCard.getBoundingClientRect();
+            bubble.style.left = `${cardRect.left + cardRect.width / 2 - 10}px`;
+            bubble.style.top = `${cardRect.top + cardRect.height / 2 - 10}px`;
+
+            const dx = cartButtonRect.left + cartButtonRect.width / 2 - (cardRect.left + cardRect.height / 2);
+            const dy = cartButtonRect.top + cartButtonRect.height / 2 - (cardRect.top + cardRect.height / 2);
+
+            bubble.style.setProperty('--dx', `${dx}px`);
+            bubble.style.setProperty('--dy', `${dy}px`);
+
+            bubble.addEventListener('animationend', () => {
+                bubble.remove();
+            });
+
+            cartButton.classList.add('cart-jiggle');
+            cartButton.addEventListener('animationend', () => {
+                cartButton.classList.remove('cart-jiggle');
+            }, { once: true });
+        };
+
+        window.changeQuantity = function(productId, change) {
+            let currentCart = loadFromLocalStorage(CART_DATA_KEY, []);
+            const existingItem = currentCart.find(item => item.id === productId);
+            if (existingItem) {
+                existingItem.quantity += change;
+                if (existingItem.quantity <= 0) {
+                    currentCart = currentCart.filter(item => item.id !== productId);
+                }
+            }
+            saveToLocalStorage(CART_DATA_KEY, currentCart);
+            renderCart(currentCart);
+        };
+
+        window.removeFromCart = function(productId) {
+            let currentCart = loadFromLocalStorage(CART_DATA_KEY, []);
+            currentCart = currentCart.filter(item => item.id !== productId);
+            saveToLocalStorage(CART_DATA_KEY, currentCart);
+            renderCart(currentCart);
+        };
+
+        cartButton.addEventListener('click', () => {
+            cartModal.classList.add('open');
+            cartOverlay.classList.add('open');
+            notificationModal.classList.remove('open');
+        });
+
+        closeCartButton.addEventListener('click', () => {
+            cartModal.classList.remove('open');
+            cartOverlay.classList.remove('open');
+        });
+
+        cartOverlay.addEventListener('click', () => {
+            cartModal.classList.remove('open');
+            notificationModal.classList.remove('open');
+            cartOverlay.classList.remove('open');
+        });
+
+        clearCartBtn.addEventListener('click', () => {
+             saveToLocalStorage(CART_DATA_KEY, []);
+             renderCart([]);
+             showDialog("Cart Cleared", "Your shopping cart has been emptied.");
+        });
+
+        function openNameModal() {
+            shopNameInput.value = shopNameElement.textContent;
+            nameModalOverlay.classList.remove('hidden');
+            nameModalOverlay.classList.add('open');
+        }
+
+        shopNameElement.addEventListener('click', openNameModal);
+
+        saveNameBtn.addEventListener('click', () => {
+            const newName = shopNameInput.value.trim();
+            if (newName) {
+                const shopData = loadFromLocalStorage(SHOP_DATA_KEY, {});
+                shopData.shopName = newName;
+                saveToLocalStorage(SHOP_DATA_KEY, shopData);
+                shopNameElement.textContent = newName;
+            }
+            nameModalOverlay.classList.add('hidden');
+            nameModalOverlay.classList.remove('open');
+        });
+
+        cancelNameBtn.addEventListener('click', () => {
+            nameModalOverlay.classList.add('hidden');
+            nameModalOverlay.classList.remove('open');
+        });
+
+        openNavBtn.addEventListener('click', () => {
+            leftNav.classList.add('open');
+            navOverlay.classList.add('open');
+        });
+
+        closeNavBtn.addEventListener('click', () => {
+            leftNav.classList.remove('open');
+            navOverlay.classList.remove('open');
+        });
+
+        navOverlay.addEventListener('click', () => {
+            leftNav.classList.remove('open');
+            navOverlay.classList.remove('open');
+        });
+
+        userRoleSelector.addEventListener('change', (e) => {
+            let userRole = e.target.value;
+            updateEditingPermissions(userRole);
+        });
+
+        function setupAboutListeners() {
+            aboutStory.addEventListener('blur', (e) => {
+                const shopData = loadFromLocalStorage(SHOP_DATA_KEY, {});
+                shopData.about.story = e.target.textContent;
+                saveToLocalStorage(SHOP_DATA_KEY, shopData);
+            });
+            aboutMission.addEventListener('blur', (e) => {
+                const shopData = loadFromLocalStorage(SHOP_DATA_KEY, {});
+                shopData.about.mission = e.target.textContent;
+                saveToLocalStorage(SHOP_DATA_KEY, shopData);
+            });
+            aboutContact.addEventListener('blur', (e) => {
+                const shopData = loadFromLocalStorage(SHOP_DATA_KEY, {});
+                shopData.about.contact = e.target.textContent;
+                saveToLocalStorage(SHOP_DATA_KEY, shopData);
+            });
+            logoContainer.addEventListener('blur', (e) => {
+                const shopData = loadFromLocalStorage(SHOP_DATA_KEY, {});
+                shopData.logoText = e.target.textContent;
+                saveToLocalStorage(SHOP_DATA_KEY, shopData);
+            });
+        }
+
+        let scene, camera, renderer, cube;
+        let is3DViewOpen = false;
+        let isMouseDown = false;
+        let mouseX = 0, mouseY = 0;
+
+        function init3D() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, threejsCanvas.clientWidth / threejsCanvas.clientHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(threejsCanvas.clientWidth, threejsCanvas.clientHeight);
+            threejsCanvas.appendChild(renderer.domElement);
+            const geometry = new THREE.BoxGeometry(1, 1, 1);
+            const material = new THREE.MeshNormalMaterial();
+            cube = new THREE.Mesh(geometry, material);
+            scene.add(cube);
+            camera.position.z = 2;
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+            const pointLight = new THREE.PointLight(0xffffff, 0.5);
+            pointLight.position.set(2, 2, 2);
+            scene.add(pointLight);
+            threejsCanvas.addEventListener('mousedown', (e) => {
+                isMouseDown = true;
+                mouseX = e.clientX;
+                mouseY = e.clientY;
+            });
+            threejsCanvas.addEventListener('mouseup', () => {
+                isMouseDown = false;
+            });
+            threejsCanvas.addEventListener('mousemove', (e) => {
+                if (isMouseDown) {
+                    const deltaX = e.clientX - mouseX;
+                    const deltaY = e.clientY - mouseY;
+                    cube.rotation.y += deltaX * 0.01;
+                    cube.rotation.x += deltaY * 0.01;
+                    mouseX = e.clientX;
+                    mouseY = e.clientY;
+                }
+            });
+            window.addEventListener('resize', () => {
+                camera.aspect = threejsCanvas.clientWidth / threejsCanvas.clientHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(threejsCanvas.clientWidth, threejsCanvas.clientHeight);
+            });
+        }
+        
+        function animate() {
+            if (is3DViewOpen) {
+                requestAnimationFrame(animate);
+                cube.rotation.x += 0.005;
+                cube.rotation.y += 0.005;
+                renderer.render(scene, camera);
+            }
+        }
+        
+        threeDButton.addEventListener('click', () => {
+            is3DViewOpen = !is3DViewOpen;
+            if (is3DViewOpen) {
+                productsContainer.classList.add('hidden');
+                threejsCanvas.classList.remove('hidden');
+                if (!scene) {
+                    init3D();
+                }
+                animate();
+            } else {
+                productsContainer.classList.remove('hidden');
+                threejsCanvas.classList.add('hidden');
+            }
+        });
+
+        window.onload = function() {
+            initializeApp();
+        };
+    </script>
+</body>
+</html>
+
